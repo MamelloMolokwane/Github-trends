@@ -17,4 +17,10 @@ class TestPipeline:
     def test_tranform():
         ...
 
+    def test_gold_layer_exist():
+        ...
+    
+    def test_load():
+        ...
+
     
