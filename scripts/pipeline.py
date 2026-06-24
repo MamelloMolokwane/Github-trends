@@ -119,6 +119,8 @@ def transform(raw_loc, cleaned_loc):
 def load():
     conn = sqlite3.connect("github-trends.db")
     # Store the data in a database.
+    cursor = conn.cursor()
+
     ...
 
 if __name__ == "__main__":
