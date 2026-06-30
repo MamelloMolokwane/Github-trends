@@ -29,7 +29,7 @@ def get_raw_data(file_loc):
     # Get repositories from the last 3 months
     last_3_months = (date.today() - timedelta(days=90)).isoformat()
     params = {
-        "q": f"created:>{last_3_months}",
+        "q": f"created:>{last_3_months}", # Measure by new repositories.
         "sort": "stars",
         "order": "desc",
         "per_page": 100
@@ -59,36 +59,39 @@ def extract(file_loc):
 def transform(raw_loc, cleaned_loc):
     # Transform and clean the data then save it in the silver layer
     cleaned_data = []
+    # os.makedirs(os.path.dirname())
 
     with open(raw_loc, encoding="utf-8") as file:
         raw_data = json.load(file)
 
     for data in raw_data["items"]:
         clean = {
-            "repository_id": data["id"],
-            "repository_name": data["name"],
-            "repository_link": data["html_url"],
-            "owner_id": data["owner"]["id"],
-            "owner_name": data["owner"]["login"],
-            "owner_type": data["owner"]["type"],
-            "description": data["description"],
-            "stars": data["stargazers_count"],
-            "fork_count": data["forks_count"],
-            "language": data["language"] or "Uknown",
-            "created_at": data["created_at"],
-            "updated_at": data["updated_at"],
-            "watchers_count": data["watchers_count"],
+            "repository_id": data["id"].strip(),
+            "repository_name": data["name"].strip(),
+            "repository_link": data["html_url"].strip(),
+            "owner_id": data["owner"]["id"].strip(),
+            "owner_name": data["owner"]["login"].strip(),
+            "owner_type": data["owner"]["type"].strip(),
+            "description": data["description"].strip(),
+            "stars": data["stargazers_count"].strip(),
+            "fork_count": data["forks_count"].strip(),
+            "language": data["language"].strip() or "Uknown",
+            "created_at": data["created_at"].strip(),
+            "updated_at": data["updated_at"].strip(),
+            "watchers_count": data["watchers_count"].strip(),
             "snapshot_date": date.today().isoformat(),
-            "open_issues_count": data["open_issues_count"],
-            "archived": data["archived"],
-            "fork": data["fork"],
-            "topics": data["topics"]
+            "open_issues_count": data["open_issues_count"].strip(),
+            "archived": data["archived"].strip(),
+            "fork": data["fork"].strip(),
+            "topics": data["topics"].strip()
         }
-        cleaned_data.append(clean)
+
+        if clean not in cleaned_data:
+            cleaned_data.append(clean)
     
     headers = [
         "repository_id",
-       "repository_name",
+        "repository_name",
         "repository_link",
         "owner_id",
         "owner_name",
@@ -116,9 +119,76 @@ def transform(raw_loc, cleaned_loc):
 
     return "Data has been transformed and put into the silver the layer."
 
-def load():
+# Create function to get repos
+def get_silver_layer_data(silver_layer):   
+    with open(silver_layer) as silver:
+        reader = list(csv.DictReader(silver))
+    return reader
+
+def load_facts(cleaned_loc):
     conn = sqlite3.connect("github-trends.db")
+    cursor = conn.cursor()
     # Store the data in a database.
+    # Do research on data warehouses
+    # Fact table should have repo_key, owner_key, language_key, date_key, repo_id(maybe), stars, forks - The keys are dimensions.
+    # The keys can be numbers that were incremented
+    # Get or create the dimension keys
+    create_table = """
+    CREATE TABLE IF NOT EXISTS fact_repo_snapshot (
+
+    )
+        """
+    ...
+
+def load_dim(silver_layer):
+    # I might have to start with the dimensions first because of the keys I have to increment🤔.
+    conn = sqlite3.connect("github-trends.db")
+    cursor = conn.cursor()
+    
+    # Create Dimension tables
+    dim_repo = """
+    CREATE TABLE dim_repository (
+    repo_key INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo_id INTEGER,
+    repo_name TEXT
+    )
+        """
+    dim_language = """
+    CREATE TABLE dim_language (
+    language_key INTEGER PRIMARY KEY AUTOINCREMENT,
+    language_name TEXT
+    )
+        """
+    dim_owner = """
+    CREATE TABLE dim_language (
+    owner_key INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_name TEXT,
+    owner_id INTEGER,
+    owner_type TEXT
+    )
+        """
+    dim_date = """
+    CREATE TABLE dim_date (
+    date_key INTEGER PRIMARY KEY AUTOINCREMENT,
+    year INTEGER,
+    month TEXT,
+    day TEXT
+    )
+    """
+    cursor.execute(dim_repo)
+    cursor.execute(dim_owner)
+    cursor.execute(dim_language)
+    cursor.execute(dim_date)
+    # Get data to insert into tables
+    silver_data = get_silver_layer_data(silver_layer)
+    for data in silver_data:
+        # Insert the correct data into it's correct table
+        # Insert language into dim_language
+        cursor.execute(f"""
+        INSERT INTO dim_language (language_name)
+        VALUE {data["language"]}
+        """)
+        # Insert 
     ...
 
 if __name__ == "__main__":
