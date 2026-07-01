@@ -133,9 +133,16 @@ def load_facts(cleaned_loc):
     # Fact table should have repo_key, owner_key, language_key, date_key, repo_id(maybe), stars, forks - The keys are dimensions.
     # The keys can be numbers that were incremented
     # Get or create the dimension keys
+
     create_table = """
     CREATE TABLE IF NOT EXISTS fact_repo_snapshot (
-
+        repo_key INTEGER,
+        language_key INTEGER,
+        owner_key INTEGER,
+        date_key INTEGER,
+        repo_id INTEGER,
+        stars INTEGER,
+        forks INTEGER
     )
         """
     ...
@@ -205,8 +212,12 @@ def load_dim(silver_layer):
         INSERT INTO dim_date (year, month, day)
         VALUES {int(data["year"])}, {data["month"]}, {data["day"]}
         """)
+
+    # Commit and close sqlite
+    conn.commit()
+    conn.close()
         
-    ...
+    
 
 if __name__ == "__main__":
     main()
