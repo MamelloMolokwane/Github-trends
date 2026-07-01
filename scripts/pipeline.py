@@ -133,7 +133,12 @@ def load_facts(cleaned_loc):
     # Fact table should have repo_key, owner_key, language_key, date_key, repo_id(maybe), stars, forks - The keys are dimensions.
     # The keys can be numbers that were incremented
     # Get or create the dimension keys
+    cursor.execute("""
+    SELECT * FROM dim_repo
+    """)
+    dim_repo = cursor.fetchall()
 
+    # Create table
     create_table = """
     CREATE TABLE IF NOT EXISTS fact_repo_snapshot (
         repo_key INTEGER,
@@ -145,6 +150,9 @@ def load_facts(cleaned_loc):
         forks INTEGER
     )
         """
+    # Insert data into table
+    cursor.execute(create_table)
+
     ...
 
 def load_dim(silver_layer):
