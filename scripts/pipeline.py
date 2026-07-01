@@ -179,16 +179,33 @@ def load_dim(silver_layer):
     cursor.execute(dim_owner)
     cursor.execute(dim_language)
     cursor.execute(dim_date)
+
     # Get data to insert into tables
     silver_data = get_silver_layer_data(silver_layer)
     for data in silver_data:
         # Insert the correct data into it's correct table
+        
         # Insert language into dim_language
         cursor.execute(f"""
         INSERT INTO dim_language (language_name)
         VALUE {data["language"]}
         """)
-        # Insert 
+        # Insert repository data into dim_repo
+        cursor.execute(f"""
+        INSERT INTO dim_repo (repo_id, )
+        VALUES {int(data["repository_id"])}, {data["repository_name"]}
+        """)
+        # Insert owner data into dim_owner 
+        cursor.execute(f"""
+        INSERT INTO dim_owner (owner_name, owner_id, owner_type)
+        VALUES {data["owner_name"]}, {int(data["owner_id"])}, {data["owner_type"]}
+        """)
+        # Insert date data into dim_date
+        cursor.execute(f"""
+        INSERT INTO dim_date (year, month, day)
+        VALUES {int(data["year"])}, {data["month"]}, {data["day"]}
+        """)
+        
     ...
 
 if __name__ == "__main__":
