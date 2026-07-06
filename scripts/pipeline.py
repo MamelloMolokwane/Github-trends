@@ -129,14 +129,28 @@ def load_facts(cleaned_loc):
     conn = sqlite3.connect("github-trends.db")
     cursor = conn.cursor()
     # Store the data in a database.
-    # Do research on data warehouses
     # Fact table should have repo_key, owner_key, language_key, date_key, repo_id(maybe), stars, forks - The keys are dimensions.
-    # The keys can be numbers that were incremented
     # Get or create the dimension keys
+    conn.row_factory = sqlite3.Row
     cursor.execute("""
     SELECT * FROM dim_repo
     """)
     dim_repo = cursor.fetchall()
+
+    cursor.execute("""
+    SELECT * FROM dim_language
+    """)
+    dim_language = cursor.fetchall()
+
+    cursor.execute("""
+    SELECT * FROM dim_owner
+    """)
+    dim_owner = cursor.fetchall()
+
+    cursor.execute("""
+    SELECT * FROM dim_date
+    """)
+    dim_date = cursor.fetchall()
 
     # Create table
     create_table = """
@@ -150,9 +164,53 @@ def load_facts(cleaned_loc):
         forks INTEGER
     )
         """
-    # Insert data into table
     cursor.execute(create_table)
+    # Insert data into table
+    for i in dim_repo:
+        # Insert repo keys
+        cursor.execute(f"""
+        INSERT INTO fact_repo_snapshot (repo_key)
+        VALUE {i["repo_key"]}
+            """)
 
+    for i in dim_language:
+        # Insert language key
+        cursor.execute(f"""
+        INSERT INTO fact_repo_snapshot (language_key)
+        VALUE {i["language_key"]}    
+        """)
+        # Insert repo_id
+        cursor.execute(f"""
+        INSERT INTO fact_repo_snapshot (repo_id)
+        VALUE {i["repo_id"]}
+        """)
+
+    for i in dim_owner:
+        # Insert owner key
+        cursor.execute(f"""
+        INSERT INTO fact_repo_snapshot (owner_key)
+        VALUE {i["owner_key"]}
+        """)
+
+    for i in dim_date:
+        # Insert date key
+        cursor.execute(f"""
+        INSERT INTO fact_repo_snapshot (date_key)
+        VALUE {i["date_key"]}
+        """)
+
+    silver_layer = get_silver_layer_data(cleaned_loc)
+    cursor.execute(f"""
+        SELECT repo_id FROM fact_repo_snapshot
+        """)
+    # Get stars and forks
+    for i in range(len(cursor.fetchall())):
+        if cursor.fetchall[i]["repo_key"] == silver_layer[i]["repo_id"]:
+            cursor.execute(f"""
+            INSERT INTO fact_repo_snapshot (stars, forks)
+            VALUES {silver_layer[i]["stars"]}, {silver_layer[i]["forks"]}
+            """)
+    # The fact_repo_snapshot should be fully build now but there's probable debugging to do.
     ...
 
 def load_dim(silver_layer):
