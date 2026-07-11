@@ -1,4 +1,5 @@
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 import pandas as pd
 import datetime
 import requests
@@ -7,7 +8,8 @@ import json
 import csv
 import os
 
-TOKEN = "MY_TOKEN"
+load_dotenv()
+TOKEN = os.getenv("MY_TOKEN")
 
 def main():
     bronze_layer = f"./data/bronze/raw_repo_{datetime.date.today().isoformat()}.json"
@@ -16,7 +18,7 @@ def main():
     os.makedirs(os.path.dirname(gold_layer), exist_ok=True)
 
     extract(bronze_layer)
-    # print(data)
+
     print("Finished with extraction moving on to transformation...")
 
     transform(bronze_layer, silver_layer)
