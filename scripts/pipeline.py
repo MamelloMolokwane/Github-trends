@@ -1,6 +1,6 @@
-from datetime import date, timedelta
 from bs4 import BeautifulSoup
 import pandas as pd
+import datetime
 import requests
 import sqlite3
 import json
@@ -10,14 +10,43 @@ import os
 TOKEN = "MY_TOKEN"
 
 def main():
-    bronze_layer = f"./data/bronze/raw_repo_{date.today().isoformat()}.json"
-    silver_layer = f"./data/silver/cleaned_repo_{date.today()}.csv"
-    # gold_layer = f"./data/bronze/raw_repo_{date.today()}.json"
-    data = extract(bronze_layer)
+    bronze_layer = f"./data/bronze/raw_repo_{datetime.date.today().isoformat()}.json"
+    silver_layer = f"./data/silver/cleaned_repo_{datetime.date.today()}.csv"
+    gold_layer = "./data/gold/github-trends.db"
+    os.makedirs(os.path.dirname(gold_layer), exist_ok=True)
+
+    extract(bronze_layer)
+    # print(data)
     print("Finished with extraction moving on to transformation...")
+
     transform(bronze_layer, silver_layer)
-    print("Finished with transformation moving on load...")
+    print("Finished with transformation moving on loading dimension...")
+
+    load_dimensions(silver_layer, gold_layer)
+    print("Finished loading dimensions, moving on too loading facts...")
+
+    load_facts(silver_layer, gold_layer)
+    print("Finished loading facts. Pipeline loaded.")
+    table_check(gold_layer)
+    print("Warehouse created.")
     
+def table_check(database):
+    conn = sqlite3.connect(database)
+    cursor = conn.cursor()
+    tables = [
+        "dim_repository",
+        "dim_language",
+        "dim_owner",
+        "dim_date",
+        "fact_repo_snapshot"
+    ]
+
+    for table in tables:
+        cursor.execute(f"SELECT COUNT(*) FROM {table}")
+        count = cursor.fetchone()[0]
+        print(f"{table}: {count}")
+
+    conn.close()
     
 
 def get_raw_data(file_loc):
@@ -27,9 +56,9 @@ def get_raw_data(file_loc):
         "Accept": "Application/vnd.github+json"
     }
     # Get repositories from the last 3 months
-    last_3_months = (date.today() - timedelta(days=90)).isoformat()
+    last_month = (datetime.date.today() - datetime.timedelta(days=30)).isoformat()
     params = {
-        "q": f"created:>{last_3_months}", # Measure by new repositories.
+        "q": f"created:>{last_month}", # Measure by new repositories.
         "sort": "stars",
         "order": "desc",
         "per_page": 100
@@ -66,24 +95,24 @@ def transform(raw_loc, cleaned_loc):
 
     for data in raw_data["items"]:
         clean = {
-            "repository_id": data["id"].strip(),
+            "repository_id": data["id"],
             "repository_name": data["name"].strip(),
             "repository_link": data["html_url"].strip(),
-            "owner_id": data["owner"]["id"].strip(),
+            "owner_id": data["owner"]["id"],
             "owner_name": data["owner"]["login"].strip(),
             "owner_type": data["owner"]["type"].strip(),
-            "description": data["description"].strip(),
-            "stars": data["stargazers_count"].strip(),
-            "fork_count": data["forks_count"].strip(),
-            "language": data["language"].strip() or "Uknown",
-            "created_at": data["created_at"].strip(),
-            "updated_at": data["updated_at"].strip(),
-            "watchers_count": data["watchers_count"].strip(),
-            "snapshot_date": date.today().isoformat(),
-            "open_issues_count": data["open_issues_count"].strip(),
-            "archived": data["archived"].strip(),
-            "fork": data["fork"].strip(),
-            "topics": data["topics"].strip()
+            "description": (data["description"] or "").strip(),
+            "stars": data["stargazers_count"],
+            "fork_count": data["forks_count"],
+            "language": (data["language"] or "Unknown").strip(),
+            "created_at": data["created_at"],
+            "updated_at": data["updated_at"],
+            "watchers_count": data["watchers_count"],
+            "snapshot_date": datetime.date.today().isoformat(),
+            "open_issues_count": data["open_issues_count"],
+            "archived": data["archived"],
+            "fork": data["fork"],
+            "topics": json.dumps(data["topics"])
         }
 
         if clean not in cleaned_data:
@@ -117,135 +146,110 @@ def transform(raw_loc, cleaned_loc):
         writer.writeheader()
         writer.writerows(cleaned_data)
 
-    return "Data has been transformed and put into the silver the layer."
+    print("Data has been transformed and put into the silver the layer.")
 
 # Create function to get repos
 def get_silver_layer_data(silver_layer):   
-    with open(silver_layer) as silver:
+    with open(silver_layer, encoding="utf-8") as silver:
         reader = list(csv.DictReader(silver))
     return reader
 
-def load_facts(cleaned_loc):
-    conn = sqlite3.connect("github-trends.db")
-    cursor = conn.cursor()
-    # Store the data in a database.
-    # Fact table should have repo_key, owner_key, language_key, date_key, repo_id(maybe), stars, forks - The keys are dimensions.
-    # Get or create the dimension keys
+def load_facts(cleaned_loc, database):
+    conn = sqlite3.connect(database)
     conn.row_factory = sqlite3.Row
-    cursor.execute("""
-    SELECT * FROM dim_repo
-    """)
-    dim_repo = cursor.fetchall()
-
-    cursor.execute("""
-    SELECT * FROM dim_language
-    """)
-    dim_language = cursor.fetchall()
-
-    cursor.execute("""
-    SELECT * FROM dim_owner
-    """)
-    dim_owner = cursor.fetchall()
-
-    cursor.execute("""
-    SELECT * FROM dim_date
-    """)
-    dim_date = cursor.fetchall()
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA foreign_keys = ON")
+    silver_layer = get_silver_layer_data(cleaned_loc)
 
     # Create table
     create_table = """
     CREATE TABLE IF NOT EXISTS fact_repo_snapshot (
-        repo_key INTEGER,
-        language_key INTEGER,
-        owner_key INTEGER,
-        date_key INTEGER,
+        snapshot_key INTEGER PRIMARY KEY AUTOINCREMENT,
+        repo_key INTEGER NOT NULL REFERENCES dim_repository(repo_key),
+        language_key INTEGER NOT NULL REFERENCES dim_language(language_key),
+        owner_key INTEGER NOT NULL REFERENCES dim_owner(owner_key),
+        date_key INTEGER NOT NULL REFERENCES dim_date(date_key),
         repo_id INTEGER,
         stars INTEGER,
-        forks INTEGER
+        forks INTEGER,
+        watchers INTEGER,
+        UNIQUE(repo_key, date_key)
     )
         """
     cursor.execute(create_table)
+
     # Insert data into table
-    for i in dim_repo:
-        # Insert repo keys
-        cursor.execute(f"""
-        INSERT INTO fact_repo_snapshot (repo_key)
-        VALUE {i["repo_key"]}
-            """)
+    for row in silver_layer:
+        cursor.execute("""
+        SELECT repo_key FROM dim_repository WHERE repo_id = ?
+        """, (row["repository_id"],))
+        repo_key = cursor.fetchone()["repo_key"]
 
-    for i in dim_language:
-        # Insert language key
-        cursor.execute(f"""
-        INSERT INTO fact_repo_snapshot (language_key)
-        VALUE {i["language_key"]}    
-        """)
-        # Insert repo_id
-        cursor.execute(f"""
-        INSERT INTO fact_repo_snapshot (repo_id)
-        VALUE {i["repo_id"]}
-        """)
+        cursor.execute("""
+        SELECT owner_key FROM dim_owner WHERE owner_id = ?
+        """, (row["owner_id"],))
+        owner_key = cursor.fetchone()["owner_key"]
 
-    for i in dim_owner:
-        # Insert owner key
-        cursor.execute(f"""
-        INSERT INTO fact_repo_snapshot (owner_key)
-        VALUE {i["owner_key"]}
-        """)
+        cursor.execute("""
+        SELECT language_key FROM dim_language WHERE language_name = ?
+        """, (row["language"],))
+        language_key = cursor.fetchone()["language_key"]
+        # 
+        d = datetime.datetime.fromisoformat(row["snapshot_date"])
+        cursor.execute("""
+        SELECT date_key FROM dim_date WHERE year = ? AND month = ? AND DAY = ?
+        """, (d.year, d.month, d.day))
+        date_key = cursor.fetchone()["date_key"]
 
-    for i in dim_date:
-        # Insert date key
-        cursor.execute(f"""
-        INSERT INTO fact_repo_snapshot (date_key)
-        VALUE {i["date_key"]}
-        """)
+        # Load fact_repo_snapshot table
+        cursor.execute("""
+        INSERT INTO fact_repo_snapshot (repo_key, repo_id, owner_key, language_key, date_key, stars, forks, watchers)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(repo_key, date_key)
+        DO UPDATE SET
+        stars = excluded.stars,
+        forks = excluded.forks,
+        watchers = excluded.watchers
+        """, (repo_key, row["repository_id"], owner_key, language_key, date_key, row["stars"], row["fork_count"], row["watchers_count"])
+        )
 
-    silver_layer = get_silver_layer_data(cleaned_loc)
-    cursor.execute(f"""
-        SELECT repo_id FROM fact_repo_snapshot
-        """)
-    # Get stars and forks
-    for i in range(len(cursor.fetchall())):
-        if cursor.fetchall[i]["repo_key"] == silver_layer[i]["repo_id"]:
-            cursor.execute(f"""
-            INSERT INTO fact_repo_snapshot (stars, forks)
-            VALUES {silver_layer[i]["stars"]}, {silver_layer[i]["forks"]}
-            """)
-    # The fact_repo_snapshot should be fully build now but there's probable debugging to do.
-    ...
-
-def load_dim(silver_layer):
-    # I might have to start with the dimensions first because of the keys I have to increment🤔.
-    conn = sqlite3.connect("github-trends.db")
-    cursor = conn.cursor()
+    conn.commit()
+    conn.close()
     
+
+def load_dimensions(cleaned_loc, database):
+    conn = sqlite3.connect(database)
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA foreign_keys = ON")
+
     # Create Dimension tables
     dim_repo = """
-    CREATE TABLE dim_repository (
+    CREATE TABLE IF NOT EXISTS dim_repository (
     repo_key INTEGER PRIMARY KEY AUTOINCREMENT,
-    repo_id INTEGER,
+    repo_id INTEGER UNIQUE,
     repo_name TEXT
     )
         """
     dim_language = """
-    CREATE TABLE dim_language (
+    CREATE TABLE IF NOT EXISTS dim_language (
     language_key INTEGER PRIMARY KEY AUTOINCREMENT,
-    language_name TEXT
+    language_name TEXT UNIQUE
     )
         """
     dim_owner = """
-    CREATE TABLE dim_language (
+    CREATE TABLE IF NOT EXISTS dim_owner (
     owner_key INTEGER PRIMARY KEY AUTOINCREMENT,
     owner_name TEXT,
-    owner_id INTEGER,
+    owner_id INTEGER UNIQUE,
     owner_type TEXT
     )
         """
     dim_date = """
-    CREATE TABLE dim_date (
+    CREATE TABLE IF NOT EXISTS dim_date (
     date_key INTEGER PRIMARY KEY AUTOINCREMENT,
     year INTEGER,
-    month TEXT,
-    day TEXT
+    month INTEGER,
+    day INTEGER,
+    UNIQUE(year, month, day)
     )
     """
     cursor.execute(dim_repo)
@@ -254,30 +258,31 @@ def load_dim(silver_layer):
     cursor.execute(dim_date)
 
     # Get data to insert into tables
-    silver_data = get_silver_layer_data(silver_layer)
+    silver_data = get_silver_layer_data(cleaned_loc)
     for data in silver_data:
         # Insert the correct data into it's correct table
         
         # Insert language into dim_language
-        cursor.execute(f"""
-        INSERT INTO dim_language (language_name)
-        VALUE {data["language"]}
-        """)
+        cursor.execute("""
+        INSERT OR IGNORE INTO dim_language (language_name)
+        VALUES (?)
+        """, (data["language"],))
         # Insert repository data into dim_repo
-        cursor.execute(f"""
-        INSERT INTO dim_repo (repo_id, )
-        VALUES {int(data["repository_id"])}, {data["repository_name"]}
-        """)
+        cursor.execute("""
+        INSERT OR IGNORE INTO dim_repository (repo_id, repo_name)
+        VALUES (?, ?)""", (int(data["repository_id"]), data["repository_name"])
+        )
         # Insert owner data into dim_owner 
-        cursor.execute(f"""
-        INSERT INTO dim_owner (owner_name, owner_id, owner_type)
-        VALUES {data["owner_name"]}, {int(data["owner_id"])}, {data["owner_type"]}
-        """)
+        cursor.execute("""
+        INSERT OR IGNORE INTO dim_owner (owner_name, owner_id, owner_type)
+        VALUES (?, ?, ?)""", (data["owner_name"], int(data["owner_id"]), data["owner_type"])
+        )
         # Insert date data into dim_date
-        cursor.execute(f"""
-        INSERT INTO dim_date (year, month, day)
-        VALUES {int(data["year"])}, {data["month"]}, {data["day"]}
-        """)
+        d = datetime.datetime.fromisoformat(data["snapshot_date"])
+        cursor.execute("""
+        INSERT OR IGNORE INTO dim_date (year, month, day)
+        VALUES (?, ?, ?)""", (d.year, d.month, d.day)
+        )
 
     # Commit and close sqlite
     conn.commit()
