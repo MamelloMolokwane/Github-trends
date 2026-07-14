@@ -1,9 +1,13 @@
 from scripts.pipeline import extract, transform, load
+import pathlib
 import unittest
 
 # Don't forget to write tests
 
 class TestPipeline:
+
+    def test_raw_data_exist():
+        ...
 
     def test_extract():
         ...

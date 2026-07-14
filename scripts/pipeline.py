@@ -57,10 +57,10 @@ def get_raw_data(file_loc):
         "Authorization": f"Bearer {TOKEN}",
         "Accept": "Application/vnd.github+json"
     }
-    # Get repositories from the last 3 months
-    last_month = (datetime.date.today() - datetime.timedelta(days=30)).isoformat()
+    # Get repositories created in the last 24 hours.
+    day = (datetime.date.today() - datetime.timedelta(1)).isoformat() # Maybe turn this back into month.
     params = {
-        "q": f"created:>{last_month}", # Measure by new repositories.
+        "q": f"created:>{day}", # Measure by new repositories.
         "sort": "stars",
         "order": "desc",
         "per_page": 100
@@ -71,6 +71,7 @@ def get_raw_data(file_loc):
         os.makedirs(os.path.dirname(file_loc), exist_ok=True)
         with open(file_loc, "w") as file:
             json.dump(response.json(), file, indent=4)
+        # print(response.json())
     else:
         print("Problem occoured get_raw_data returned with statuse code:", response.status_code)
         print(response.text)
@@ -80,7 +81,7 @@ def extract(file_loc):
     try:
         with open(file_loc, encoding="utf-8") as file:
             data = json.load(file)
-        return data
+        print("Data extracted successfully.")
     except FileNotFoundError:
         print("File probably not created.")
         return f"{file_loc} not found"
@@ -196,7 +197,7 @@ def load_facts(cleaned_loc, database):
         SELECT language_key FROM dim_language WHERE language_name = ?
         """, (row["language"],))
         language_key = cursor.fetchone()["language_key"]
-        # 
+
         d = datetime.datetime.fromisoformat(row["snapshot_date"])
         cursor.execute("""
         SELECT date_key FROM dim_date WHERE year = ? AND month = ? AND DAY = ?
