@@ -1,7 +1,19 @@
 // Create a button to run the pipeline
 
-(async function(url) {
-    const response = await fetch(url);
+document.getElementById("run-pipeline").addEventListener("click", async function(event) {
+    try {
+        const response = await fetch("/etl/run");
+        const data = await response.json();
+        console.log("Pipeline Started...")
+        await loadLanguages();
+        await loadRepos();
+    } catch(error) {
+        console.log("Pipeline failed to start: ", error)
+    }
+});
+
+async function loadLanguages() {
+    const response = await fetch("/languages");
     const data = await response.json();
     const languages = data.map(project => project.language_name)
     const starCount = data.map(project => project.total_stars);
@@ -19,10 +31,10 @@
             ]
         }
     })
-})("/languages");
+};
 
-(async function(url) {
-    const response = await fetch(url);
+async function loadRepos() {
+    const response = await fetch("/repos");
     const data = await response.json();
     const repos = data.map(project => project.repo_name);
     const starsCount = data.map(project => project.total_stars);
@@ -38,6 +50,9 @@
             }]
         }
     })
-})("/repos")
+};
+
+loadLanguages();
+loadRepos();
 
 // Add more charts
