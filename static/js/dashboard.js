@@ -1,4 +1,3 @@
-// Create a button to run the pipeline
 
 let languageCanvasChart;
 let repoCanvasChart;
@@ -27,8 +26,6 @@ pipelineButton.addEventListener("click", async function(event) {
             loadForks(),
             loadWatchers()
         ]);
-        localStorage.setItem("lastPipelineRun", today);
-        pipelineButton.textContent = "Already ran today";
     } catch(error) {
         console.log("Pipeline failed to start: ", error)
         pipelineButton.disabled = false;
