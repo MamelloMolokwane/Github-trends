@@ -3,18 +3,41 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <title>GitHub Trends</title>
 </head>
 <body>
-    <h1>GitHub Trends</h1>
-    <div id="run-pipeline-container"><button id="run-pipeline">Pipeline</button></div>
+    <h1 class="text-4xl font-bold mb-8">GitHub Trends Dashboard</h1>
+    <div id="loader" class="hidden fixed inset-0 z-50 flex items-center justify-content-center bg-slate-900/60 backdrop-blur-sm">
+        <div class="flex flex-col items-center gap-3">
+            <!-- Spinner Circle -->
+            <div id="spinner-circle" class="h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600"></div>
+            <span class="text-sm font-medium text-white">Loading...</span>
+        </div>
+    </div>
+    <div id="run-pipeline-container">
+        <button id="run-pipeline"  class="bg-blue-600 text-white px-5 py-2 rounded hover:bg-blue-700">Pipeline</button>
+    </div>
+    
     <div id="dashboard-container">
-        <div id="bar-chart-container" style="width: 800px;">
-            <canvas id="languages-bar-chart"></canvas>
-            <canvas id="repos-bar-chart"></canvas>
+        <div id="bar-chart-container" class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6 p-6">
+            <div class="bg-white rounded-lg shadow p-4">
+                <canvas id="languages-bar-chart"></canvas>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <canvas id="repos-bar-chart"></canvas>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <canvas id="owners-bar-chart"></canvas>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <canvas id="forks-bar-chart"></canvas>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <canvas id="watchers-bar-chart"></canvas>
+            </div>
         </div>
         
-        <p>Charts are above</p>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="/static/js/dashboard.js"></script>
