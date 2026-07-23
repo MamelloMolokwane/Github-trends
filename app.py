@@ -31,8 +31,8 @@ def execute_etl_pipeline():
             
     etl.extract(bronze_layer)
     etl.transform(bronze_layer, silver_layer)
-    etl.load_dimensions(silver_layer, gold_layer)
-    etl.load_facts(silver_layer, gold_layer)
+    etl.load_dimensions(silver_layer)
+    etl.load_facts(silver_layer)
 
     return jsonify({
         "status": "success",

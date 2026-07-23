@@ -1,4 +1,4 @@
 requests
-bs4
 Pandas
 python-dotenv
+"psycopg[binary]"

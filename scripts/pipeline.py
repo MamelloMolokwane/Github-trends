@@ -1,20 +1,21 @@
+from psycopg.rows import dict_row
 from dotenv import load_dotenv
 import pandas as pd
 import datetime
 import requests
-import sqlite3
+import psycopg
 import json
 import csv
 import os
 
 load_dotenv()
-TOKEN = os.getenv("MY_TOKEN")
+TOKEN = os.getenv("GITHUB_TOKEN")
 
 def main():
     bronze_layer = f"./data/bronze/raw_repo_{datetime.date.today().isoformat()}.json"
     silver_layer = f"./data/silver/cleaned_repo_{datetime.date.today()}.csv"
-    gold_layer = "./data/gold/github-trends.db"
-    os.makedirs(os.path.dirname(gold_layer), exist_ok=True)
+    # gold_layer = "./data/gold/github-trends.db"
+    # os.makedirs(os.path.dirname(gold_layer), exist_ok=True)
 
     extract(bronze_layer)
 
@@ -23,16 +24,26 @@ def main():
     transform(bronze_layer, silver_layer)
     print("Finished with transformation moving on loading dimension...")
 
-    load_dimensions(silver_layer, gold_layer)
+    load_dimensions(silver_layer)
     print("Finished loading dimensions, moving on too loading facts...")
 
-    load_facts(silver_layer, gold_layer)
+    load_facts(silver_layer)
     print("Finished loading facts. Pipeline loaded.")
-    table_check(gold_layer)
+    table_check()
     print("Warehouse created.")
+
+def get_database():
+    return psycopg.connect(
+    host=os.getenv("DB_HOST"),
+    port=os.getenv("DB_PORT"),
+    dbname=os.getenv("DB_NAME"),
+    user=os.getenv("DB_USER"),
+    password=os.getenv("DB_PASSWORD"),
+    row_factory=dict_row)
+
     
-def table_check(database):
-    conn = sqlite3.connect(database)
+def table_check():
+    conn = get_database()
     cursor = conn.cursor()
     tables = [
         "dim_repository",
@@ -43,8 +54,8 @@ def table_check(database):
     ]
 
     for table in tables:
-        cursor.execute(f"SELECT COUNT(*) FROM {table}")
-        count = cursor.fetchone()[0]
+        cursor.execute(f"SELECT COUNT(*)  AS count FROM {table}")
+        count = cursor.fetchone()["count"]
         print(f"{table}: {count}")
 
     conn.close()
@@ -156,17 +167,15 @@ def get_silver_layer_data(silver_layer):
         reader = list(csv.DictReader(silver))
     return reader
 
-def load_facts(cleaned_loc, database):
-    conn = sqlite3.connect(database)
-    conn.row_factory = sqlite3.Row
+def load_facts(cleaned_loc):
+    conn = get_database()
     cursor = conn.cursor()
-    cursor.execute("PRAGMA foreign_keys = ON")
     silver_layer = get_silver_layer_data(cleaned_loc)
 
     # Create table
     create_table = """
     CREATE TABLE IF NOT EXISTS fact_repo_snapshot (
-        snapshot_key INTEGER PRIMARY KEY AUTOINCREMENT,
+        snapshot_key INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         repo_key INTEGER NOT NULL REFERENCES dim_repository(repo_key),
         language_key INTEGER NOT NULL REFERENCES dim_language(language_key),
         owner_key INTEGER NOT NULL REFERENCES dim_owner(owner_key),
@@ -181,65 +190,66 @@ def load_facts(cleaned_loc, database):
     cursor.execute(create_table)
 
     # Insert data into table
-    for row in silver_layer:
-        cursor.execute("""
-        SELECT repo_key FROM dim_repository WHERE repo_id = ?
-        """, (row["repository_id"],))
-        repo_key = cursor.fetchone()["repo_key"]
+    with conn.cursor() as cur:
+        for row in silver_layer:
+            cur.execute("""
+            SELECT repo_key FROM dim_repository WHERE repo_id = %s
+            """, (row["repository_id"],))
+            repo_key = cur.fetchone()["repo_key"]
 
-        cursor.execute("""
-        SELECT owner_key FROM dim_owner WHERE owner_id = ?
-        """, (row["owner_id"],))
-        owner_key = cursor.fetchone()["owner_key"]
+            cur.execute("""
+            SELECT owner_key FROM dim_owner WHERE owner_id = %s
+            """, (row["owner_id"],))
+            owner_key = cur.fetchone()["owner_key"]
 
-        cursor.execute("""
-        SELECT language_key FROM dim_language WHERE language_name = ?
-        """, (row["language"],))
-        language_key = cursor.fetchone()["language_key"]
+            cur.execute("""
+            SELECT language_key FROM dim_language WHERE language_name = %s
+            """, (row["language"],))
+            language_key = cur.fetchone()["language_key"]
 
-        d = datetime.datetime.fromisoformat(row["snapshot_date"])
-        cursor.execute("""
-        SELECT date_key FROM dim_date WHERE year = ? AND month = ? AND DAY = ?
-        """, (d.year, d.month, d.day))
-        date_key = cursor.fetchone()["date_key"]
+            d = datetime.datetime.fromisoformat(row["snapshot_date"])
+            cur.execute("""
+            SELECT date_key FROM dim_date WHERE year = %s AND month = %s AND DAY = %s
+            """, (d.year, d.month, d.day))
+            date_key = cur.fetchone()["date_key"]
 
-        # Load fact_repo_snapshot table
-        cursor.execute("""
-        INSERT INTO fact_repo_snapshot (repo_key, repo_id, owner_key, language_key, date_key, stars, forks, watchers)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(repo_key, date_key)
-        DO UPDATE SET
-        stars = excluded.stars,
-        forks = excluded.forks,
-        watchers = excluded.watchers
-        """, (repo_key, row["repository_id"], owner_key, language_key, date_key, row["stars"], row["fork_count"], row["watchers_count"])
-        )
+            # Load fact_repo_snapshot table
+            cur.execute("""
+            INSERT INTO fact_repo_snapshot (repo_key, repo_id, owner_key, language_key, date_key, stars, forks, watchers)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT(repo_key, date_key)
+            DO UPDATE SET
+            stars = excluded.stars,
+            forks = excluded.forks,
+            watchers = excluded.watchers
+            """, (repo_key, row["repository_id"], owner_key, language_key, date_key, row["stars"], row["fork_count"], row["watchers_count"])
+            )
 
     conn.commit()
     conn.close()
     
 
-def load_dimensions(cleaned_loc, database):
-    conn = sqlite3.connect(database)
+def load_dimensions(cleaned_loc):
+    conn = get_database()
+
     cursor = conn.cursor()
-    cursor.execute("PRAGMA foreign_keys = ON")
 
     # Create Dimension tables
     dim_repo = """
     CREATE TABLE IF NOT EXISTS dim_repository (
-    repo_key INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo_key INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     repo_id INTEGER UNIQUE,
     repo_name TEXT
     )
         """
     dim_language = """
     CREATE TABLE IF NOT EXISTS dim_language (
-    language_key INTEGER PRIMARY KEY AUTOINCREMENT,
+    language_key INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     language_name TEXT UNIQUE
     )
         """
     dim_owner = """
     CREATE TABLE IF NOT EXISTS dim_owner (
-    owner_key INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_key INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     owner_name TEXT,
     owner_id INTEGER UNIQUE,
     owner_type TEXT
@@ -247,7 +257,7 @@ def load_dimensions(cleaned_loc, database):
         """
     dim_date = """
     CREATE TABLE IF NOT EXISTS dim_date (
-    date_key INTEGER PRIMARY KEY AUTOINCREMENT,
+    date_key INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     year INTEGER,
     month INTEGER,
     day INTEGER,
@@ -259,32 +269,37 @@ def load_dimensions(cleaned_loc, database):
     cursor.execute(dim_language)
     cursor.execute(dim_date)
 
-    # Get data to insert into tables
+    # Get data
     silver_data = get_silver_layer_data(cleaned_loc)
-    for data in silver_data:
-        # Insert the correct data into it's correct table
-        
-        # Insert language into dim_language
-        cursor.execute("""
-        INSERT OR IGNORE INTO dim_language (language_name)
-        VALUES (?)
-        """, (data["language"],))
-        # Insert repository data into dim_repo
-        cursor.execute("""
-        INSERT OR IGNORE INTO dim_repository (repo_id, repo_name)
-        VALUES (?, ?)""", (int(data["repository_id"]), data["repository_name"])
-        )
-        # Insert owner data into dim_owner 
-        cursor.execute("""
-        INSERT OR IGNORE INTO dim_owner (owner_name, owner_id, owner_type)
-        VALUES (?, ?, ?)""", (data["owner_name"], int(data["owner_id"]), data["owner_type"])
-        )
-        # Insert date data into dim_date
-        d = datetime.datetime.fromisoformat(data["snapshot_date"])
-        cursor.execute("""
-        INSERT OR IGNORE INTO dim_date (year, month, day)
-        VALUES (?, ?, ?)""", (d.year, d.month, d.day)
-        )
+
+    # Insert data into tables
+    with conn.cursor() as cur:
+        for data in silver_data:
+            # Insert language into dim_language
+            cur.execute("""
+            INSERT INTO dim_language (language_name)
+            VALUES (%s)
+            ON CONFLICT DO NOTHING
+            """, (data["language"],))
+            # Insert repository data into dim_repo
+            cur.execute("""
+            INSERT INTO dim_repository (repo_id, repo_name)
+            VALUES (%s, %s)
+            ON CONFLICT DO NOTHING""", (int(data["repository_id"]), data["repository_name"])
+            )
+            # Insert owner data into dim_owner 
+            cur.execute("""
+            INSERT INTO dim_owner (owner_name, owner_id, owner_type)
+            VALUES (%s, %s, %s)
+            ON CONFLICT DO NOTHING""", (data["owner_name"], int(data["owner_id"]), data["owner_type"])
+            )
+            # Insert date data into dim_date
+            d = datetime.datetime.fromisoformat(data["snapshot_date"])
+            cur.execute("""
+            INSERT INTO dim_date (year, month, day)
+            VALUES (%s, %s, %s)
+            ON CONFLICT DO NOTHING""", (d.year, d.month, d.day)
+            )
 
     # Commit and close sqlite
     conn.commit()
