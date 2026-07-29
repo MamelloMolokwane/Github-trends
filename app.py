@@ -40,8 +40,7 @@ def execute_etl_pipeline():
     })
 
 def query(sql):
-    conn = sqlite3.connect(gold_layer)
-    conn.row_factory = sqlite3.Row
+    conn = etl.get_database()
     cursor = conn.cursor()
 
     cursor.execute(sql)

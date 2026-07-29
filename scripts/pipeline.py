@@ -81,7 +81,6 @@ def get_raw_data(file_loc):
         os.makedirs(os.path.dirname(file_loc), exist_ok=True)
         with open(file_loc, "w") as file:
             json.dump(response.json(), file, indent=4)
-        # print(response.json())
     else:
         print("Problem occoured get_raw_data returned with statuse code:", response.status_code)
         print(response.text)
@@ -105,6 +104,7 @@ def transform(raw_loc, cleaned_loc):
 
     with open(raw_loc, encoding="utf-8") as file:
         raw_data = json.load(file)
+
 
     for data in raw_data["items"]:
         clean = {
