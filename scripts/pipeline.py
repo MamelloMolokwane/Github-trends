@@ -5,7 +5,6 @@ import datetime
 import requests
 import psycopg
 import json
-import csv
 import os
 
 load_dotenv()
@@ -20,15 +19,17 @@ def main():
     extract(bronze_layer)
 
     print("Finished with extraction moving on to transformation...")
-
-    transform(bronze_layer, silver_layer)
+    # Transform the data then return it
+    df = transform(bronze_layer, silver_layer)
     print("Finished with transformation moving on loading dimension...")
 
-    load_dimensions(silver_layer)
+    # Create dimensions
+    load_dimensions(df)
     print("Finished loading dimensions, moving on too loading facts...")
-
-    load_facts(silver_layer)
+    # Create fact table
+    load_facts(df)
     print("Finished loading facts. Pipeline loaded.")
+
     table_check()
     print("Warehouse created.")
 
@@ -98,79 +99,74 @@ def extract(file_loc):
     
     
 def transform(raw_loc, cleaned_loc):
-    # Transform and clean the data then save it in the silver layer
-    cleaned_data = []
-    # os.makedirs(os.path.dirname())
+    """ Transform and clean the data then save it in the silver layer """
 
     with open(raw_loc, encoding="utf-8") as file:
         raw_data = json.load(file)
 
 
-    for data in raw_data["items"]:
-        clean = {
-            "repository_id": data["id"],
-            "repository_name": data["name"].strip(),
-            "repository_link": data["html_url"].strip(),
-            "owner_id": data["owner"]["id"],
-            "owner_name": data["owner"]["login"].strip(),
-            "owner_type": data["owner"]["type"].strip(),
-            "description": (data["description"] or "").strip(),
-            "stars": data["stargazers_count"],
-            "fork_count": data["forks_count"],
-            "language": (data["language"] or "Unknown").strip(),
-            "created_at": data["created_at"],
-            "updated_at": data["updated_at"],
-            "watchers_count": data["watchers_count"],
-            "snapshot_date": datetime.date.today().isoformat(),
-            "open_issues_count": data["open_issues_count"],
-            "archived": data["archived"],
-            "fork": data["fork"],
-            "topics": json.dumps(data["topics"])
-        }
+    df = pd.json_normalize(raw_data["items"])
 
-        if clean not in cleaned_data:
-            cleaned_data.append(clean)
-    
-    headers = [
-        "repository_id",
-        "repository_name",
-        "repository_link",
-        "owner_id",
-        "owner_name",
-        "owner_type",
-        "description",
-        "stars",
-        "fork_count",
-        "language",
-        "created_at",
-        "updated_at",
-        "watchers_count",
-        "snapshot_date",
-        "open_issues_count",
-        "archived",
-        "fork",
-        "topics",
+    df = df.rename(columns={
+        "id": "repository_id",
+        "name": "repository_name",
+        "html_url": "repository_link",
+        "owner.id": "owner_id",
+        "owner.login": "owner_name",
+        "owner.type": "owner_type",
+        "stargazers_count": "stars",
+        "forks_count": "fork_count"
+    })
+
+    df["topics"] = df["topics"].apply(json.dumps)
+    df = df.drop_duplicates()
+    # filter to only keep the coloumns needed
+    df = df[
+        [
+            "repository_id",
+            "repository_name",
+            "repository_link",
+            "owner_id",
+            "owner_name",
+            "owner_type",
+            "description",
+            "stars",
+            "fork_count",
+            "language",
+            "created_at",
+            "updated_at",
+            "watchers_count",
+            "open_issues_count",
+            "archived",
+            "fork",
+            "topics"
+        ]
     ]
+
+    df["snapshot_date"] = datetime.date.today().isoformat()
+    df["language"] = df["language"].fillna("Unknown")
+    df["description"] = df["description"].fillna("")
+    df["repository_name"] = df["repository_name"].str.strip()
+    df["repository_link"] = df["repository_link"].str.strip()
+    df["owner_name"] = df["owner_name"].str.strip()
+    df["owner_type"] = df["owner_type"].str.strip()
+    df["language"] = df["language"].str.strip()
+    df["description"] = df["description"].str.strip()
 
     # Save in csv file
     os.makedirs(os.path.dirname(cleaned_loc), exist_ok=True)
-    with open(cleaned_loc, "w",  newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=headers)
-        writer.writeheader()
-        writer.writerows(cleaned_data)
+    df.to_csv(cleaned_loc, index=False)
 
     print("Data has been transformed and put into the silver the layer.")
+    return df
 
 # Create function to get repos
 def get_silver_layer_data(silver_layer):   
-    with open(silver_layer, encoding="utf-8") as silver:
-        reader = list(csv.DictReader(silver))
-    return reader
+    return pd.read_csv(silver_layer)
 
-def load_facts(cleaned_loc):
+def load_facts(df):
     conn = get_database()
     cursor = conn.cursor()
-    silver_layer = get_silver_layer_data(cleaned_loc)
 
     # Create table
     create_table = """
@@ -191,23 +187,23 @@ def load_facts(cleaned_loc):
 
     # Insert data into table
     with conn.cursor() as cur:
-        for row in silver_layer:
+        for row in df.itertuples(index=False):
             cur.execute("""
             SELECT repo_key FROM dim_repository WHERE repo_id = %s
-            """, (row["repository_id"],))
+            """, (row.repository_id,))
             repo_key = cur.fetchone()["repo_key"]
 
             cur.execute("""
             SELECT owner_key FROM dim_owner WHERE owner_id = %s
-            """, (row["owner_id"],))
+            """, (row.owner_id,))
             owner_key = cur.fetchone()["owner_key"]
 
             cur.execute("""
             SELECT language_key FROM dim_language WHERE language_name = %s
-            """, (row["language"],))
+            """, (row.language,))
             language_key = cur.fetchone()["language_key"]
 
-            d = datetime.datetime.fromisoformat(row["snapshot_date"])
+            d = datetime.datetime.fromisoformat(row.snapshot_date)
             cur.execute("""
             SELECT date_key FROM dim_date WHERE year = %s AND month = %s AND DAY = %s
             """, (d.year, d.month, d.day))
@@ -221,14 +217,14 @@ def load_facts(cleaned_loc):
             stars = excluded.stars,
             forks = excluded.forks,
             watchers = excluded.watchers
-            """, (repo_key, row["repository_id"], owner_key, language_key, date_key, row["stars"], row["fork_count"], row["watchers_count"])
+            """, (repo_key, row.repository_id, owner_key, language_key, date_key, row.stars, row.fork_count, row.watchers_count)
             )
 
     conn.commit()
     conn.close()
     
 
-def load_dimensions(cleaned_loc):
+def load_dimensions(df):
     conn = get_database()
 
     cursor = conn.cursor()
@@ -269,32 +265,29 @@ def load_dimensions(cleaned_loc):
     cursor.execute(dim_language)
     cursor.execute(dim_date)
 
-    # Get data
-    silver_data = get_silver_layer_data(cleaned_loc)
-
     # Insert data into tables
     with conn.cursor() as cur:
-        for data in silver_data:
+        for data in df.itertuples(index=False):
             # Insert language into dim_language
             cur.execute("""
             INSERT INTO dim_language (language_name)
             VALUES (%s)
             ON CONFLICT DO NOTHING
-            """, (data["language"],))
+            """, (data.language,))
             # Insert repository data into dim_repo
             cur.execute("""
             INSERT INTO dim_repository (repo_id, repo_name)
             VALUES (%s, %s)
-            ON CONFLICT DO NOTHING""", (int(data["repository_id"]), data["repository_name"])
+            ON CONFLICT DO NOTHING""", (int(data.repository_id), data.repository_name)
             )
             # Insert owner data into dim_owner 
             cur.execute("""
             INSERT INTO dim_owner (owner_name, owner_id, owner_type)
             VALUES (%s, %s, %s)
-            ON CONFLICT DO NOTHING""", (data["owner_name"], int(data["owner_id"]), data["owner_type"])
+            ON CONFLICT DO NOTHING""", (data.owner_name, int(data.owner_id), data.owner_type)
             )
             # Insert date data into dim_date
-            d = datetime.datetime.fromisoformat(data["snapshot_date"])
+            d = datetime.datetime.fromisoformat(data.snapshot_date)
             cur.execute("""
             INSERT INTO dim_date (year, month, day)
             VALUES (%s, %s, %s)
