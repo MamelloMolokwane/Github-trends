@@ -1,8 +1,10 @@
-import os
-import sqlite3
-import datetime
+from scripts.load import load_facts, load_dimensions
 from flask import Flask, jsonify, render_template
-import scripts.pipeline as etl
+from scripts.transformation import transform
+from scripts.database import get_database
+from scripts.extraction import extract
+import datetime
+import os
 
 app = Flask(__name__)
 
@@ -29,10 +31,10 @@ def execute_etl_pipeline():
                     "message": "Pipeline already ran today."
                 }), 403
             
-    etl.extract(bronze_layer)
-    etl.transform(bronze_layer, silver_layer)
-    etl.load_dimensions(silver_layer)
-    etl.load_facts(silver_layer)
+    extract(bronze_layer)
+    transform(bronze_layer, silver_layer)
+    load_dimensions(silver_layer)
+    load_facts(silver_layer)
 
     return jsonify({
         "status": "success",
@@ -40,7 +42,7 @@ def execute_etl_pipeline():
     })
 
 def query(sql):
-    conn = etl.get_database()
+    conn = get_database()
     cursor = conn.cursor()
 
     cursor.execute(sql)

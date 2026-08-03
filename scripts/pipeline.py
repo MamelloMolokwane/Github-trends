@@ -1,23 +1,15 @@
-from psycopg.rows import dict_row
-from dotenv import load_dotenv
-import pandas as pd
+from load import load_facts, load_dimensions
+from transformation import transform
+from database import get_database
+from extraction import extract
 import datetime
-import requests
-import psycopg
-import json
-import os
 
-load_dotenv()
-TOKEN = os.getenv("GITHUB_TOKEN")
 
 def main():
     bronze_layer = f"./data/bronze/raw_repo_{datetime.date.today().isoformat()}.json"
     silver_layer = f"./data/silver/cleaned_repo_{datetime.date.today()}.csv"
-    # gold_layer = "./data/gold/github-trends.db"
-    # os.makedirs(os.path.dirname(gold_layer), exist_ok=True)
 
     extract(bronze_layer)
-
     print("Finished with extraction moving on to transformation...")
     # Transform the data then return it
     df = transform(bronze_layer, silver_layer)
@@ -33,16 +25,6 @@ def main():
     table_check()
     print("Warehouse created.")
 
-def get_database():
-    return psycopg.connect(
-    host=os.getenv("DB_HOST"),
-    port=os.getenv("DB_PORT"),
-    dbname=os.getenv("DB_NAME"),
-    user=os.getenv("DB_USER"),
-    password=os.getenv("DB_PASSWORD"),
-    row_factory=dict_row)
-
-    
 def table_check():
     conn = get_database()
     cursor = conn.cursor()
@@ -60,244 +42,6 @@ def table_check():
         print(f"{table}: {count}")
 
     conn.close()
-    
-
-def get_raw_data(file_loc):
-    url = "https://api.github.com/search/repositories"
-    headers = {
-        "Authorization": f"Bearer {TOKEN}",
-        "Accept": "Application/vnd.github+json"
-    }
-    # Get repositories created in the last 24 hours.
-    day = (datetime.date.today() - datetime.timedelta(1)).isoformat() # Maybe turn this back into month.
-    params = {
-        "q": f"created:>{day}", # Measure by new repositories.
-        "sort": "stars",
-        "order": "desc",
-        "per_page": 100
-    }
-    response = requests.get(url, params=params, headers=headers, timeout=14)
-    
-    if response.status_code == 200:
-        os.makedirs(os.path.dirname(file_loc), exist_ok=True)
-        with open(file_loc, "w") as file:
-            json.dump(response.json(), file, indent=4)
-    else:
-        print("Problem occoured get_raw_data returned with statuse code:", response.status_code)
-        print(response.text)
-
-def extract(file_loc):
-    get_raw_data(file_loc)
-    try:
-        with open(file_loc, encoding="utf-8") as file:
-            data = json.load(file)
-        print("Data extracted successfully.")
-    except FileNotFoundError:
-        print("File probably not created.")
-        return f"{file_loc} not found"
-        
-    
-    
-def transform(raw_loc, cleaned_loc):
-    """ Transform and clean the data then save it in the silver layer """
-
-    with open(raw_loc, encoding="utf-8") as file:
-        raw_data = json.load(file)
-
-
-    df = pd.json_normalize(raw_data["items"])
-
-    df = df.rename(columns={
-        "id": "repository_id",
-        "name": "repository_name",
-        "html_url": "repository_link",
-        "owner.id": "owner_id",
-        "owner.login": "owner_name",
-        "owner.type": "owner_type",
-        "stargazers_count": "stars",
-        "forks_count": "fork_count"
-    })
-
-    df["topics"] = df["topics"].apply(json.dumps)
-    df = df.drop_duplicates()
-    # filter to only keep the coloumns needed
-    df = df[
-        [
-            "repository_id",
-            "repository_name",
-            "repository_link",
-            "owner_id",
-            "owner_name",
-            "owner_type",
-            "description",
-            "stars",
-            "fork_count",
-            "language",
-            "created_at",
-            "updated_at",
-            "watchers_count",
-            "open_issues_count",
-            "archived",
-            "fork",
-            "topics"
-        ]
-    ]
-
-    df["snapshot_date"] = datetime.date.today().isoformat()
-    df["language"] = df["language"].fillna("Unknown")
-    df["description"] = df["description"].fillna("")
-    df["repository_name"] = df["repository_name"].str.strip()
-    df["repository_link"] = df["repository_link"].str.strip()
-    df["owner_name"] = df["owner_name"].str.strip()
-    df["owner_type"] = df["owner_type"].str.strip()
-    df["language"] = df["language"].str.strip()
-    df["description"] = df["description"].str.strip()
-
-    # Save in csv file
-    os.makedirs(os.path.dirname(cleaned_loc), exist_ok=True)
-    df.to_csv(cleaned_loc, index=False)
-
-    print("Data has been transformed and put into the silver the layer.")
-    return df
-
-# Create function to get repos
-def get_silver_layer_data(silver_layer):   
-    return pd.read_csv(silver_layer)
-
-def load_facts(df):
-    conn = get_database()
-    cursor = conn.cursor()
-
-    # Create table
-    create_table = """
-    CREATE TABLE IF NOT EXISTS fact_repo_snapshot (
-        snapshot_key INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        repo_key INTEGER NOT NULL REFERENCES dim_repository(repo_key),
-        language_key INTEGER NOT NULL REFERENCES dim_language(language_key),
-        owner_key INTEGER NOT NULL REFERENCES dim_owner(owner_key),
-        date_key INTEGER NOT NULL REFERENCES dim_date(date_key),
-        repo_id INTEGER,
-        stars INTEGER,
-        forks INTEGER,
-        watchers INTEGER,
-        UNIQUE(repo_key, date_key)
-    )
-        """
-    cursor.execute(create_table)
-
-    # Insert data into table
-    with conn.cursor() as cur:
-        for row in df.itertuples(index=False):
-            cur.execute("""
-            SELECT repo_key FROM dim_repository WHERE repo_id = %s
-            """, (row.repository_id,))
-            repo_key = cur.fetchone()["repo_key"]
-
-            cur.execute("""
-            SELECT owner_key FROM dim_owner WHERE owner_id = %s
-            """, (row.owner_id,))
-            owner_key = cur.fetchone()["owner_key"]
-
-            cur.execute("""
-            SELECT language_key FROM dim_language WHERE language_name = %s
-            """, (row.language,))
-            language_key = cur.fetchone()["language_key"]
-
-            d = datetime.datetime.fromisoformat(row.snapshot_date)
-            cur.execute("""
-            SELECT date_key FROM dim_date WHERE year = %s AND month = %s AND DAY = %s
-            """, (d.year, d.month, d.day))
-            date_key = cur.fetchone()["date_key"]
-
-            # Load fact_repo_snapshot table
-            cur.execute("""
-            INSERT INTO fact_repo_snapshot (repo_key, repo_id, owner_key, language_key, date_key, stars, forks, watchers)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT(repo_key, date_key)
-            DO UPDATE SET
-            stars = excluded.stars,
-            forks = excluded.forks,
-            watchers = excluded.watchers
-            """, (repo_key, row.repository_id, owner_key, language_key, date_key, row.stars, row.fork_count, row.watchers_count)
-            )
-
-    conn.commit()
-    conn.close()
-    
-
-def load_dimensions(df):
-    conn = get_database()
-
-    cursor = conn.cursor()
-
-    # Create Dimension tables
-    dim_repo = """
-    CREATE TABLE IF NOT EXISTS dim_repository (
-    repo_key INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    repo_id INTEGER UNIQUE,
-    repo_name TEXT
-    )
-        """
-    dim_language = """
-    CREATE TABLE IF NOT EXISTS dim_language (
-    language_key INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    language_name TEXT UNIQUE
-    )
-        """
-    dim_owner = """
-    CREATE TABLE IF NOT EXISTS dim_owner (
-    owner_key INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    owner_name TEXT,
-    owner_id INTEGER UNIQUE,
-    owner_type TEXT
-    )
-        """
-    dim_date = """
-    CREATE TABLE IF NOT EXISTS dim_date (
-    date_key INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    year INTEGER,
-    month INTEGER,
-    day INTEGER,
-    UNIQUE(year, month, day)
-    )
-    """
-    cursor.execute(dim_repo)
-    cursor.execute(dim_owner)
-    cursor.execute(dim_language)
-    cursor.execute(dim_date)
-
-    # Insert data into tables
-    with conn.cursor() as cur:
-        for data in df.itertuples(index=False):
-            # Insert language into dim_language
-            cur.execute("""
-            INSERT INTO dim_language (language_name)
-            VALUES (%s)
-            ON CONFLICT DO NOTHING
-            """, (data.language,))
-            # Insert repository data into dim_repo
-            cur.execute("""
-            INSERT INTO dim_repository (repo_id, repo_name)
-            VALUES (%s, %s)
-            ON CONFLICT DO NOTHING""", (int(data.repository_id), data.repository_name)
-            )
-            # Insert owner data into dim_owner 
-            cur.execute("""
-            INSERT INTO dim_owner (owner_name, owner_id, owner_type)
-            VALUES (%s, %s, %s)
-            ON CONFLICT DO NOTHING""", (data.owner_name, int(data.owner_id), data.owner_type)
-            )
-            # Insert date data into dim_date
-            d = datetime.datetime.fromisoformat(data.snapshot_date)
-            cur.execute("""
-            INSERT INTO dim_date (year, month, day)
-            VALUES (%s, %s, %s)
-            ON CONFLICT DO NOTHING""", (d.year, d.month, d.day)
-            )
-
-    # Commit and close sqlite
-    conn.commit()
-    conn.close()
-        
     
 
 if __name__ == "__main__":
