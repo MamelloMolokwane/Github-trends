@@ -8,9 +8,10 @@ import datetime
 def main():
     bronze_layer = f"./data/bronze/raw_repo_{datetime.date.today().isoformat()}.json"
     silver_layer = f"./data/silver/cleaned_repo_{datetime.date.today()}.csv"
-
+    
     extract(bronze_layer)
     print("Finished with extraction moving on to transformation...")
+
     # Transform the data then return it
     df = transform(bronze_layer, silver_layer)
     print("Finished with transformation moving on loading dimension...")

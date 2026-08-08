@@ -2,3 +2,4 @@ requests
 Pandas
 python-dotenv
 "psycopg[binary]"
+APScheduler

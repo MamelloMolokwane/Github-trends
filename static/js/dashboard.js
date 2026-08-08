@@ -5,35 +5,6 @@ let ownerCanvasChart;
 let forkCanvasChart;
 let watchersCanvasChart;
 
-const loader = document.getElementById("loader");
-const pipelineButton = document.getElementById("run-pipeline");
-pipelineButton.addEventListener("click", async function(event) {
-    
-    try {
-        pipelineButton.disabled = true;
-        loader.classList.remove("hidden");
-        const response = await fetch("/etl/run");
-        const data = await response.json();
-        if (!response.ok) {
-            alert(result.message);
-            return;
-        }
-        console.log("Pipeline Started...")
-        await Promise.all([
-            loadLanguages(),
-            loadRepos(),
-            loadOwners(),
-            loadForks(),
-            loadWatchers()
-        ]);
-    } catch(error) {
-        console.log("Pipeline failed to start: ", error)
-        pipelineButton.disabled = false;
-    } finally {
-        loader.classList.add("hidden");
-    }
-});
-
 async function loadLanguages() {
     const response = await fetch("/languages");
     const data = await response.json();
