@@ -1,5 +1,6 @@
 requests
 Pandas
 python-dotenv
+gunicorn
 "psycopg[binary]"
 APScheduler
