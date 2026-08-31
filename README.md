@@ -308,7 +308,7 @@ github-trends/
     └── test_pipeline.py
 ```
 
-> **Note:** The production Gold layer is PostgreSQL. If `data/gold/github-trends.db` is present locally, it represents an earlier SQLite development/prototype artefact and is not the PostgreSQL warehouse used by the current application.
+> **Note:** The production Gold layer is PostgreSQL.`data/gold/github-trends.db` represents an earlier SQLite development/prototype artefact and is not the PostgreSQL warehouse used by the current application.
 
 ## Technology Stack
 
