@@ -1,30 +1,30 @@
-from scripts.pipeline import extract, transform, load
-import pathlib
-import unittest
+# from scripts.pipeline import extract, transform, load
+# import pathlib
+# import unittest
 
-# Don't forget to write tests
+# # Don't forget to write tests
 
-class TestPipeline:
+# class TestPipeline:
 
-    def test_raw_data_exist():
-        ...
+#     def test_raw_data_exist():
+#         ...
 
-    def test_extract():
-        ...
+#     def test_extract():
+#         ...
     
-    def test_bronze_layer_exists():
-        ...
+#     def test_bronze_layer_exists():
+#         ...
 
-    def test_silver_layer_exists():
-        ...
+#     def test_silver_layer_exists():
+#         ...
 
-    def test_tranform():
-        ...
+#     def test_tranform():
+#         ...
 
-    def test_gold_layer_exist():
-        ...
+#     def test_gold_layer_exist():
+#         ...
     
-    def test_load():
-        ...
+#     def test_load():
+#         ...
 
     

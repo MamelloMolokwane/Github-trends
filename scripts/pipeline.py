@@ -1,7 +1,7 @@
-from load import load_facts, load_dimensions
-from transformation import transform
-from database import get_database
-from extraction import extract
+from scripts.load import load_facts, load_dimensions
+from scripts.transformation import transform
+from scripts.database import get_database
+from scripts.extraction import extract
 import datetime
 
 
@@ -15,7 +15,6 @@ def main():
     # Transform the data then return it
     df = transform(bronze_layer, silver_layer)
     print("Finished with transformation moving on loading dimension...")
-
     # Create dimensions
     load_dimensions(df)
     print("Finished loading dimensions, moving on too loading facts...")

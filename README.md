@@ -11,45 +11,6 @@ The project is designed to answer questions such as:
 
 ## Architecture
 
-```text
-                    ┌─────────────────┐
-                    │   GitHub API    │
-                    └────────┬────────┘
-                             │
-                             ▼
-                    ┌─────────────────┐
-                    │  Bronze Layer   │
-                    │    Raw JSON     │
-                    └────────┬────────┘
-                             │
-                             ▼
-                    ┌─────────────────┐
-                    │  Silver Layer   │
-                    │ Clean & Transform│
-                    │      CSV        │
-                    └────────┬────────┘
-                             │
-                             ▼
-                    ┌─────────────────┐
-                    │   Gold Layer    │
-                    │   PostgreSQL    │
-                    │  Star Schema    │
-                    └────────┬────────┘
-                             │
-                             ▼
-                    ┌─────────────────┐
-                    │    Flask App    │
-                    │    REST/API     │
-                    └────────┬────────┘
-                             │
-                             ▼
-                    ┌─────────────────┐
-                    │    Dashboard    │
-                    │ JavaScript +    │
-                    │    Chart.js     │
-                    └─────────────────┘
-```
-
 The platform follows a **Bronze → Silver → Gold** data architecture.
 
 ## Features
@@ -267,47 +228,6 @@ GET /load_data
 
 The API returns structured data that can be consumed by the frontend dashboard or other applications.
 
-## Project Structure
-
-```text
-github-trends/
-│
-├── app.py
-├── .env
-├── .gitignore
-├── requirements.txt
-├── README.md
-│
-├── data/
-│   ├── bronze/
-│   │   └── raw_repo_YYYY-MM-DD.json
-│   │
-│   ├── silver/
-│   │   └── cleaned_repo_YYYY-MM-DD.csv
-│   │
-│   └── gold/
-│       └── github-trends.db
-│
-├── scripts/
-│   ├── database.py
-│   ├── extraction.py
-│   ├── load.py
-│   ├── pipeline.py
-│   ├── scheduler.py
-│   └── transformation.py
-│
-├── static/
-│   ├── css/
-│   └── js/
-│       └── dashboard.js
-│
-├── templates/
-│   └── index.html
-│
-└── tests/
-    └── test_pipeline.py
-```
-
 > **Note:** The production Gold layer is PostgreSQL.`data/gold/github-trends.db` represents an earlier SQLite development/prototype artefact and is not the PostgreSQL warehouse used by the current application.
 
 ## Technology Stack
@@ -315,7 +235,6 @@ github-trends/
 | Technology    | Purpose                               |
 | ------------- | ------------------------------------- |
 | Python        | ETL pipeline and application logic    |
-| GitHub API    | Source of repository data             |
 | Pandas        | Data processing and transformation    |
 | JSON          | Raw API data format                   |
 | CSV           | Intermediate/Silver data format       |
@@ -472,8 +391,6 @@ DB_USER=your_username
 DB_PASSWORD=your_password
 ```
 
-> **Important:** Do not commit `.env` to Git. It contains private credentials and is already included in `.gitignore`.
-
 ### 5. Configure PostgreSQL
 
 Create the PostgreSQL database used by the application.
@@ -524,12 +441,9 @@ Automated tests are located in:
 
 ```text
 tests/
-└── test_pipeline.py
 ```
 
-The test suite is currently being developed.
-
-Planned tests will cover the ETL pipeline components, including:
+The tests cover the ETL pipeline components, including:
 
 * Data extraction
 * Data transformation

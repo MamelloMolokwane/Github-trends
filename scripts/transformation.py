@@ -1,7 +1,5 @@
 import pandas as pd
 import datetime
-import requests
-import psycopg
 import json
 import os
 

@@ -43,4 +43,5 @@ schedule.add_job(
     id="GitHub_etl"
 )
 
-schedule.start()
+if __name__ == "__main__":
+    schedule.start()
