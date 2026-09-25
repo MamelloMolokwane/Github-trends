@@ -9,9 +9,37 @@ The project is designed to answer questions such as:
 * How do repository stars and contributors change over time?
 * Which repositories and technology areas are attracting the most attention?
 
+---
+
 ## Architecture
 
 The platform follows a **Bronze → Silver → Gold** data architecture.
+
+```text
+GitHub API
+    │
+    ▼
+Bronze Layer
+(Raw JSON)
+    │
+    ▼
+Silver Layer
+(Clean CSV)
+    │
+    ▼
+Gold Layer
+(PostgreSQL Star Schema)
+    │
+    ▼
+Flask REST API
+    │
+    ▼
+JavaScript Dashboard
+```
+
+The application and PostgreSQL database can be run using **Docker Compose**, while automated tests are executed through **GitHub Actions**.
+
+---
 
 ## Features
 
@@ -26,15 +54,22 @@ The platform follows a **Bronze → Silver → Gold** data architecture.
 * Displays repository and technology trends through a JavaScript dashboard
 * Supports scheduled pipeline execution
 * Uses environment variables for API credentials and configuration
+* Containerises the application and PostgreSQL database using Docker
+* Uses Docker Compose to manage application and database services
+* Uses a persistent PostgreSQL Docker volume
+* Runs automated tests using GitHub Actions
 
-## Data Architecture
+---
 
-### Bronze Layer
+# Data Architecture
+
+## Bronze Layer
 
 The Bronze layer contains the raw responses received from the GitHub API.
 
 ```text
 data/bronze/
+
 ├── raw_repo_2026-06-21.json
 ├── raw_repo_2026-06-22.json
 ├── raw_repo_2026-07-11.json
@@ -51,12 +86,13 @@ Keeping the original data makes it possible to:
 * Audit the original API responses
 * Compare changes in the transformation process
 
-### Silver Layer
+## Silver Layer
 
 The Silver layer contains cleaned and transformed repository data.
 
 ```text
 data/silver/
+
 ├── cleaned_repo_2026-06-22.csv
 ├── cleaned_repo_2026-07-11.csv
 ├── cleaned_repo_2026-07-13.csv
@@ -66,7 +102,7 @@ data/silver/
 
 The transformation process converts the raw API responses into structured CSV data suitable for loading into the PostgreSQL data warehouse.
 
-### Gold Layer
+## Gold Layer
 
 The Gold layer contains the processed data in PostgreSQL.
 
@@ -90,7 +126,9 @@ The data warehouse uses a **star schema** to separate measurable repository metr
 
 The fact table stores measurable repository metrics while the dimension tables provide descriptive context for analysis.
 
-### Fact Table
+---
+
+## Fact Table
 
 The repository snapshot fact table stores measurable repository metrics such as:
 
@@ -105,7 +143,7 @@ The repository snapshot fact table stores measurable repository metrics such as:
 
 Taking repository snapshots over time makes it possible to analyse **growth and trends**, rather than only looking at the current state of a repository.
 
-### Dimension Tables
+## Dimension Tables
 
 The warehouse uses dimension tables to provide descriptive information about repository data.
 
@@ -118,11 +156,13 @@ The dimensions include:
 
 This structure allows analytical queries to join repository metrics with information about the repository, owner, programming language, and date.
 
-## ETL Pipeline
+---
+
+# ETL Pipeline
 
 The pipeline follows the traditional **Extract → Transform → Load (ETL)** process.
 
-### 1. Extract
+## 1. Extract
 
 `extraction.py` retrieves repository data from the GitHub API.
 
@@ -136,7 +176,7 @@ data/bronze/
 
 The raw API response is stored before transformation so that the original data is preserved.
 
-### 2. Transform
+## 2. Transform
 
 `transformation.py` processes the extracted repository data.
 
@@ -158,7 +198,7 @@ The transformation stage converts raw API data into a consistent structure suita
 
 The transformed data is stored in the Silver layer.
 
-### 3. Load
+## 3. Load
 
 `load.py` loads the transformed data into PostgreSQL.
 
@@ -172,21 +212,23 @@ Fact + Dimension Tables
 
 The PostgreSQL database represents the Gold layer of the pipeline and provides structured data for analytical queries and the application.
 
-### 4. Pipeline Orchestration
+## 4. Pipeline Orchestration
 
 `pipeline.py` coordinates the different stages of the ETL process.
 
 ```text
 Extraction
-     ↓
+    ↓
 Transformation
-     ↓
+    ↓
 Loading
 ```
 
 This provides a single entry point for running the complete pipeline.
 
-## Scheduling
+---
+
+# Scheduling
 
 `scheduler.py` is responsible for scheduling pipeline executions.
 
@@ -194,18 +236,21 @@ This allows repository data to be collected periodically rather than requiring m
 
 Scheduled execution allows the dataset to grow over time, making it possible to analyse changes in repository activity and technology trends.
 
-## Web Application
+---
+
+# Web Application
 
 The project includes a Flask application that provides access to the processed data.
 
 ```text
 app.py
-  ├── Flask
-  ├── PostgreSQL
-  └── Dashboard
+
+ ├── Flask
+ ├── PostgreSQL
+ └── Dashboard
 ```
 
-### Frontend Stack
+## Frontend Stack
 
 * HTML
 * CSS
@@ -214,7 +259,9 @@ app.py
 
 The dashboard provides an interactive visual interface for exploring collected GitHub technology trends.
 
-## API
+---
+
+# API
 
 The Flask application provides endpoints for accessing processed repository data.
 
@@ -222,32 +269,123 @@ Example endpoints include:
 
 ```text
 GET /repos
+
 GET /languages
+
 GET /load_data
 ```
 
 The API returns structured data that can be consumed by the frontend dashboard or other applications.
 
-> **Note:** The production Gold layer is PostgreSQL.`data/gold/github-trends.db` represents an earlier SQLite development/prototype artefact and is not the PostgreSQL warehouse used by the current application.
+> **Note:** The production Gold layer is PostgreSQL. `data/gold/github-trends.db` represents an earlier SQLite development/prototype artefact and is not the PostgreSQL warehouse used by the current application.
 
-## Technology Stack
+---
 
-| Technology    | Purpose                               |
-| ------------- | ------------------------------------- |
-| Python        | ETL pipeline and application logic    |
-| Pandas        | Data processing and transformation    |
-| JSON          | Raw API data format                   |
-| CSV           | Intermediate/Silver data format       |
-| PostgreSQL    | Data warehouse                        |
-| SQL           | Data modelling and analytical queries |
-| Flask         | Web application and REST API          |
-| JavaScript    | Dashboard functionality               |
-| HTML / CSS    | Frontend styling and layout           |
-| Chart.js      | Data visualisation                    |
-| python-dotenv | Environment variable management       |
-| Git           | Version control                       |
+# Docker
 
-## Data Pipeline Flow
+The application and PostgreSQL database can be run using Docker and Docker Compose.
+
+## Docker Architecture
+
+```text
+┌──────────────────────────┐
+│    github-trends-app     │
+│                          │
+│ Flask + Python           │
+└────────────┬─────────────┘
+             │
+             │ postgres:5432
+             ▼
+┌──────────────────────────┐
+│     github-trends-db     │
+│                          │
+│ PostgreSQL 17            │
+└────────────┬─────────────┘
+             │
+             ▼
+┌──────────────────────────┐
+│    postgres_data         │
+│                          │
+│ Persistent Docker Volume │
+└──────────────────────────┘
+```
+
+The Flask application runs in one container while PostgreSQL runs in a separate container.
+
+Docker Compose provides the network connecting the two services.
+
+The PostgreSQL database uses a named Docker volume so that database data persists when the PostgreSQL container is recreated.
+
+## Running with Docker
+
+Make sure Docker Desktop is installed and running.
+
+Create a `.env` file in the project root:
+
+```env
+GITHUB_TOKEN=your_github_token
+
+DB_HOST=postgres
+DB_PORT=5432
+DB_NAME=github_trends
+DB_USER=postgres
+DB_PASSWORD=your_password
+```
+
+Start the application and database:
+
+```bash
+docker compose up -d
+```
+
+Check the running containers:
+
+```bash
+docker compose ps
+```
+
+The Flask application is available at:
+
+```text
+http://localhost:5000
+```
+
+Stop the containers with:
+
+```bash
+docker compose down
+```
+
+The PostgreSQL data remains stored in the `postgres_data` Docker volume.
+
+> **Important:** `.env` contains credentials and should not be committed to Git.
+
+---
+
+# Technology Stack
+
+| Technology     | Purpose                                |
+| -------------- | -------------------------------------- |
+| Python         | ETL pipeline and application logic     |
+| Pandas         | Data processing and transformation     |
+| JSON           | Raw API data format                    |
+| CSV            | Intermediate/Silver data format        |
+| PostgreSQL     | Data warehouse                         |
+| SQL            | Data modelling and analytical queries  |
+| Flask          | Web application and REST API           |
+| JavaScript     | Dashboard functionality                |
+| HTML / CSS     | Frontend styling and layout            |
+| Chart.js       | Data visualisation                     |
+| python-dotenv  | Environment variable management        |
+| Docker         | Application containerisation           |
+| Docker Compose | Multi-container application management |
+| Git            | Version control                        |
+| GitHub Actions | Continuous Integration                 |
+| Pytest         | Automated testing                      |
+
+---
+
+# Data Pipeline Flow
 
 The complete flow of the application:
 
@@ -282,13 +420,75 @@ GitHub API
   (PostgreSQL)
         │
         ▼
-   Flask App
+   Flask API
         │
         ▼
     Dashboard
 ```
 
-## Example Analytical Questions
+---
+
+# CI with GitHub Actions
+
+The project uses **GitHub Actions** to automatically run the test suite.
+
+The workflow is located at:
+
+```text
+.github/
+└── workflows/
+    └── ci.yml
+```
+
+The CI pipeline runs when code is pushed to `main` or when a pull request targets `main`.
+
+```text
+Git Push / Pull Request
+        ↓
+GitHub Actions
+        ↓
+Checkout Repository
+        ↓
+Set up Python
+        ↓
+Install Dependencies
+        ↓
+Run Pytest
+        ↓
+    Tests Pass
+```
+
+The workflow helps ensure that changes do not introduce failing tests before they are merged.
+
+---
+
+# Testing
+
+Automated tests are located in:
+
+```text
+tests/
+```
+
+The tests cover the ETL pipeline components, including:
+
+* Data extraction
+* Data transformation
+* Data loading
+* Data validation
+* Common data-quality edge cases
+
+Tests can be run locally with:
+
+```bash
+python -m pytest
+```
+
+The same test suite is automatically executed by GitHub Actions.
+
+---
+
+# Example Analytical Questions
 
 Once the data has been loaded into the warehouse, SQL can be used to investigate questions such as:
 
@@ -315,7 +515,9 @@ GROUP BY l.language_name
 ORDER BY repository_count DESC;
 ```
 
-## Data Quality
+---
+
+# Data Quality
 
 The pipeline accounts for common problems encountered when working with real-world API data, including:
 
@@ -328,11 +530,13 @@ The pipeline accounts for common problems encountered when working with real-wor
 
 Rather than assuming that incoming data is always clean, the pipeline validates and transforms the data before loading it into the warehouse.
 
-## Getting Started
+---
 
-### Prerequisites
+# Getting Started
 
-Make sure you have the following installed:
+## Prerequisites
+
+For local development, make sure you have:
 
 * Python 3.x
 * Git
@@ -340,50 +544,59 @@ Make sure you have the following installed:
 * A GitHub account
 * A GitHub personal access token
 
-### 1. Clone the Repository
+For the containerised setup:
+
+* Docker Desktop
+
+---
+
+## 1. Clone the Repository
 
 Clone the repository using SSH:
 
 ```bash
 git clone git@github.com:MamelloMolokwane/Github-trends.git
+
 cd Github-trends
 ```
 
-### 2. Create a Virtual Environment
+---
 
-#### Windows
+## 2. Create a Virtual Environment
+
+### Windows
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\activate
 ```
 
-#### Linux / macOS
+### Linux / macOS
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-### 3. Install Dependencies
+---
+
+## 3. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configure Environment Variables
+---
+
+## 4. Configure Environment Variables
 
 Create a `.env` file in the project root.
 
+For local PostgreSQL development:
+
 ```env
 GITHUB_TOKEN=your_github_token
-```
 
-Add the PostgreSQL connection settings required by the application.
-
-For example:
-
-```env
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=github_trends
@@ -391,7 +604,9 @@ DB_USER=your_username
 DB_PASSWORD=your_password
 ```
 
-### 5. Configure PostgreSQL
+---
+
+## 5. Configure PostgreSQL
 
 Create the PostgreSQL database used by the application.
 
@@ -401,9 +616,9 @@ For example:
 CREATE DATABASE github_trends;
 ```
 
-Configure the connection details in your `.env` file according to the variables expected by the application.
+---
 
-### 6. Run the ETL Pipeline
+## 6. Run the ETL Pipeline
 
 Run the complete extraction, transformation, and loading pipeline:
 
@@ -419,7 +634,9 @@ The pipeline:
 4. Stores cleaned data in the Silver layer
 5. Loads the data into the PostgreSQL Gold layer
 
-### 7. Run the Flask Application
+---
+
+## 7. Run the Flask Application
 
 Start the local development server:
 
@@ -427,31 +644,43 @@ Start the local development server:
 python app.py
 ```
 
-Access the dashboard through the local URL displayed in your terminal.
-
-Typically:
+Access the dashboard through:
 
 ```text
 http://127.0.0.1:5000
 ```
 
-## Testing
+---
 
-Automated tests are located in:
+# Running the Project with Docker
 
-```text
-tests/
+Alternatively, the application and PostgreSQL database can be started using Docker Compose.
+
+```bash
+docker compose up -d
 ```
 
-The tests cover the ETL pipeline components, including:
+Check the services:
 
-* Data extraction
-* Data transformation
-* Data loading
-* Data validation
-* Common data-quality edge cases
+```bash
+docker compose ps
+```
 
-## Data Engineering Concepts Demonstrated
+The application will be available at:
+
+```text
+http://localhost:5000
+```
+
+Stop the services:
+
+```bash
+docker compose down
+```
+
+---
+
+# Data Engineering Concepts Demonstrated
 
 This project demonstrates practical experience with:
 
@@ -475,24 +704,34 @@ This project demonstrates practical experience with:
 * Web application development
 * Data visualisation
 * Environment configuration
+* Docker containerisation
+* Docker Compose
+* Persistent database storage
+* Automated testing
+* Continuous Integration with GitHub Actions
 * Version control
 * Handling real-world data-quality issues
 
-## Future Improvements
+---
+
+# Future Improvements
+
+Potential future improvements include:
 
 * [ ] Implement end-to-end automated integration testing
 * [ ] Add automated data-quality validation rules
 * [ ] Implement incremental data loading
 * [ ] Expand metrics collection, such as issue counts and commit frequency
 * [ ] Add advanced analytical dashboard views
-* [ ] Containerise the application using Docker
-* [ ] Build CI/CD pipelines using GitHub Actions
 * [ ] Add robust exception handling and logging
 * [ ] Implement automated retry and backoff logic for API failures
+* [ ] Build a full Continuous Deployment workflow
 * [ ] Deploy the application and dashboard
 * [ ] Expand historical trend analysis
 
-## What This Project Demonstrates
+---
+
+# What This Project Demonstrates
 
 The core goal of this project is to illustrate how raw external data can be transformed into meaningful metrics that can be consumed by an application.
 
@@ -508,10 +747,10 @@ External Data Source
    Raw Storage
         │
         ▼
- Transformation
+  Transformation
         │
         ▼
-  Cleaned Data
+   Cleaned Data
         │
         ▼
  Data Warehouse
@@ -520,13 +759,17 @@ External Data Source
   Analytical SQL
         │
         ▼
-   Flask API
+    Flask API
         │
         ▼
-  Visualisation
+   Visualisation
 ```
 
-It showcases the fundamentals of building a modular, end-to-end data engineering platform from **raw API ingestion to end-user visualisation**.
+The project demonstrates an end-to-end data engineering workflow from **raw API ingestion to data warehousing, automated testing, application development, and visualisation**.
+
+It also demonstrates how Docker can be used to package the application and database environment and how GitHub Actions can automate testing as part of the development workflow.
 
 
-WTC-CJ8UDD7D
+**Project:** GitHub Technology Trends Data Platform
+
+**Project Identifier:** WTC-CJ8UDD7D
