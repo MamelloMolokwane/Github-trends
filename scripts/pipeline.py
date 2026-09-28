@@ -1,7 +1,7 @@
-from scripts.load import load_facts, load_dimensions
-from scripts.transformation import transform
-from scripts.database import get_database
-from scripts.extraction import extract
+from load import load_facts, load_dimensions
+from transformation import transform
+from database import get_database
+from extraction import extract
 import datetime
 
 
