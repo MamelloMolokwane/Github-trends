@@ -1,6 +1,6 @@
 import pandas as pd
 import datetime
-from database import get_database
+from scripts.database import get_database
 
 
 # Create function to get repos
